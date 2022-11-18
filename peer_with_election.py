@@ -51,7 +51,6 @@ class Peer(object):
                 self.istrader = True
                 with open('./config', 'w') as f:
                     f.writelines(alive_peer)
-                    f.close()
                 for peer in alive_peer:
                     fields = peer.split(':')
                     client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -80,22 +79,20 @@ class Peer(object):
                 if self.istrader:
                     if fields[0] == '4':
                         # receive a buy request
-                        # request_category|productID|quantity|addr|clock
-                        self.clock = max(self.clock, int(fields[4])) + 1
+                        # request_category|productID|quantity|addr
                         prodID, prodNum = fields[1], int(fields[2])
                         while prodNum > 0:
                             if self.traderList[prodID]:
                                 next_seller = self.traderList[prodID].pop()
-                                self.clock += 1
                                 if int(next_seller[1]) <= prodNum:
                                     prodNum -= int(next_seller[1])
-                                    data = '|'.join(['3', prodID, next_seller[1], str(self.clock)])
+                                    data = '|'.join(['3', prodID, next_seller[1]])
                                     client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                                     client.connect((next_seller[0][0], int(next_seller[0][1])))
                                     client.send(data.encode('utf-8'))
                                     client.close()
                                 else:
-                                    data = '|'.join(['3', prodID, prodNum, str(self.clock)])
+                                    data = '|'.join(['3', prodID, prodNum])
                                     client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                                     client.connect((next_seller[0][0], int(next_seller[0][1])))
                                     client.send(data.encode('utf-8'))
@@ -104,8 +101,7 @@ class Peer(object):
                             else:
                                 break
                         replyaddr = fields[3].split('-')
-                        self.clock += 1
-                        data = '|'.join(['2', prodID, prodNum, str(self.clock)])
+                        data = '|'.join(['3', prodID, prodNum])
                         client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                         client.connect((replyaddr[0], int(replyaddr[1])))
                         client.send(data.encode('utf-8'))
@@ -125,9 +121,8 @@ class Peer(object):
                             self.buyID = random.randint(0, 2)
                             self.buyNum = random.randint(1, 10)
                         # send buy request
-                        # request_catagory|product_ID|quantity|address|clock
-                        self.clock += 1
-                        data = '|'.join(['4', str(self.buyID), str(self.buyNum), myaddr, str(self.clock)])
+                        # request_catagory|product_ID|quantity|address
+                        data = '|'.join(['4', str(self.buyID), str(self.buyNum), myaddr])
                         client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                         try:
                             client.connect((self.traderaddress[0], int(self.traderaddress[1])))
@@ -144,7 +139,7 @@ class Peer(object):
                             self.sellNum = random.randint(1, 10)
                         # send stock information
                         # request_catagory|product_ID|quantity|address
-                        data = '|'.join(['5', str(self.sellID), str(self.sellNum), myaddr, str(self.clock)])
+                        data = '|'.join(['5', str(self.sellID), str(self.sellNum), myaddr])
                         client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                         try:
                             client.connect((self.traderaddress[0], int(self.traderaddress[1])))
@@ -166,8 +161,7 @@ class Peer(object):
                         pass
                     elif fields[0] == '2':
                         # for buyer
-                        # request_category|product_id|quantity|clock
-                        self.clock = max(self.clock, int(fields[3])) + 1
+                        # request_category|product_id|quantity
                         if int(fields[2]) == self.buyNum:
                             print('Not in stock')
                         else:
@@ -176,8 +170,7 @@ class Peer(object):
                             print('Sucessfully purchase {} productID{}'.format(buy, fields[1]))
                     elif fields[0] == '3':
                         # for seller
-                        # request_category|product_id|quantity|clock
-                        self.clock = max(self.clock, int(fields[3])) + 1
+                        # request_category|product_id|quantity
                         self.sellNum -= int(fields[2])
                         print('Sucessfully sell {} productID{}'.format(fields[1], fields[2]))
                 conn.close()
