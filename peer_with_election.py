@@ -42,6 +42,25 @@ class Peer(object):
         self.isBuyer = a
         self.isSeller = b
 
+    def trader_write(self):
+        Output = open(f'output/traderinfo.txt', mode='w')
+        for prodID, prodInfo in self.traderList.items():
+            for prod in prodInfo:
+                addr, prodNum, SellerID = prod
+                addr = f'{addr[0]}-{addr[1]}'
+                data = f'{prodID}|{addr}|{prodNum}|{SellerID}\n'
+                Output.write(data)
+        Output.close()
+
+    def trader_read(self):
+        with open(f'output/traderinfo.txt') as f:
+            for line in f:
+                prodID, addr, prodNum, SellerID = line.split('|')
+                addr = addr.split('-')
+                prodNum = int(prodNum)
+                self.traderList[prodID].append((addr, prodNum, SellerID))
+            f.close()
+
     def trader_process(self, conn):
         request = conn.recv(1024)
         data = request.decode('utf-8')
@@ -51,7 +70,7 @@ class Peer(object):
             heapq.heappush(self.requestQ, (int(fields[4]), fields))
             fields = heapq.heappop(self.requestQ)[1]
             lock.release()
-        print(fields)
+        # print(fields)
 
         if fields[0] == '4':
             # receive a buy request
@@ -60,8 +79,8 @@ class Peer(object):
             self.clock = max(self.clock, int(fields[4])) + 1
             lock.release()
             prodID, prodNum = fields[1], int(fields[2])
-            # print(f'Try to sell {prodNum} productID{prodID}...')
-            print(f'Ori {fields[2]}')
+            print(f'Try to sell {prodNum} productID{prodID}...')
+            # print(f'Ori {fields[2]}')
             while prodNum > 0:
                 if self.traderList[prodID]:
                     lock.acquire()
@@ -76,6 +95,7 @@ class Peer(object):
                         client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                         client.connect((next_seller[0][0], int(next_seller[0][1])))
                         client.send(data.encode('utf-8'))
+                        # client.recv(1024)
                         client.close()
                         lock.acquire()
                         Output = open(f'output/traderlog.txt', mode='a')
@@ -88,6 +108,7 @@ class Peer(object):
                         client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                         client.connect((next_seller[0][0], int(next_seller[0][1])))
                         client.send(data.encode('utf-8'))
+                        # client.recv(1024)
                         client.close()
                         lock.acquire()
                         Output = open(f'output/traderlog.txt', mode='a')
@@ -99,44 +120,53 @@ class Peer(object):
                         prodNum = 0
                 else:
                     break
+                lock.acquire()
+                self.trader_write()
+                lock.release()
+            lock.acquire()
+            self.trader_write()
+            lock.release()
             # reply buyer
             replyaddr = fields[3].split('-')
             lock.acquire()
             self.clock += 1
             lock.release()
-            print(f'ProdNum {prodNum}')
+            # print(f'ProdNum {prodNum}')
             data = f'2|{prodID}|{prodNum}|{self.clock}'
-            print(data)
+            # print(data)
             conn.send(data.encode('utf-8'))
             client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             client.connect((replyaddr[0], int(replyaddr[1])))
             client.send(data.encode('utf-8'))
-            client.close()
+            # client.recv(1024)
         if fields[0] == '5':
             # store as: productID:[(address, quantity, peerID)]
             self.is_electing = False
             prodID, prodNum, addr, SellerID = fields[1], int(fields[2]), fields[3].split('-'), fields[5]
             self.traderList[prodID].append((addr, prodNum, SellerID))
-            # print(f'Update stock information of product{prodID}: {prodNum}.')
+            print(f'Update stock information of product{prodID}: {prodNum}.')
+            lock.acquire()
+            self.trader_write()
+            lock.release()
         conn.close()
 
 
     def buyer_process(self):
         myaddr = f'{self.address[0]}-{self.address[1]}'
         # if product number is 0, then random a product to buy
-        if self.buyNum == 0:
+        if self.buyNum <= 0:
             self.buyID = random.randint(0, 2)
-            while self.buyID == self.sellID:
-                self.buyID = random.randint(0, 2)
+            # while self.buyID == self.sellID:
+            #     self.buyID = random.randint(0, 2)
             # self.buyID = 0
             self.buyNum = random.randint(1, 10)
-            print(f'Buy {self.buyNum} porduct{self.buyID}.')
+            print(f'Purchase complete. Now buying {self.buyNum} product{self.buyID}.')
         # send buy request
         # request_catagory|product_ID|quantity|address|clock|peerID
         self.clock += 1
-        print(self.buyNum)
+        # print(self.buyNum)
         data = f'4|{self.buyID}|{self.buyNum}|{myaddr}|{self.clock}|{self.peer_id}'
-        print(data)
+        # print(data)
         client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
             client.connect((self.traderaddress[0], int(self.traderaddress[1])))
@@ -163,13 +193,13 @@ class Peer(object):
     def seller_process(self):
         myaddr = f'{self.address[0]}-{self.address[1]}'
         # if product number is 0, then random a product to sell
-        if self.sellNum == 0:
+        if self.sellNum <= 0:
             self.sellID = random.randint(0, 2)
-            while self.sellID == self.buyID:
-                self.sellID = random.randint(0, 2)
+            # while self.sellID == self.buyID:
+            #     self.sellID = random.randint(0, 2)
             # self.sellID = 1
             self.sellNum = random.randint(1, 10)
-            print(f'Sell {self.sellNum} porduct{self.sellID}.')
+            print(f'Sell complete. Now selling {self.sellNum} porduct{self.sellID}.')
         # send stock information
         # request_catagory|product_ID|quantity|address|clock|peerID
             data = f'5|{self.sellID}|{self.sellNum}|{myaddr}|{self.clock}|{self.peer_id}'
@@ -215,6 +245,7 @@ class Peer(object):
                 with open('./config', 'w') as f:
                     f.writelines(alive_peer)
                     f.close()
+                self.trader_read()
             else:
                 for address in larger_peer:
                     client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -273,27 +304,32 @@ class Peer(object):
                         request = conn.recv(1024)
                         data = request.decode('utf-8')
                         fields = data.split('|')
-                if fields[0] == '1':
+                elif fields[0] == '1':
                     # for election
                     self.election()
                     pass
-                if fields[0] == '2':
+                elif fields[0] == '2':
                     # for buyer
                     # request_category|product_id|quantity|clock
+                    pass
                     # self.clock = max(self.clock, int(fields[3])) + 1
+                    #
                     # if int(fields[2]) == self.buyNum:
                     #     print(f'Product{self.buyID} not in stock')
                     # else:
-                    #     print(self.buyNum, fields[2])
-                    #     print(fields)
+                    #     # print(self.buyNum, fields[2])
+                    #     # print(fields)
                     #     buy = self.buyNum - int(fields[2])
                     #     self.buyNum = int(fields[2])
-                    #     print(f'Sucessfully purchase {buy} product{self.buyID}')
-                    pass
-                if fields[0] == '3':
+                    #     print(f'Sucessfully buy {buy} product{self.buyID}')
+                    #     conn.send('1'.encode('utf-8'))
+
+                elif fields[0] == '3':
                     # for seller
                     # request_category|product_id|quantity|clock
                     self.clock = max(self.clock, int(fields[3])) + 1
                     self.sellNum -= int(fields[2])
                     print(f'Sucessfully sell {fields[2]} product{fields[1]}')
+                    # conn.send('1'.encode('utf-8'))
+
                 conn.close()
